@@ -1,36 +1,66 @@
 using Microsoft.EntityFrameworkCore;
-using Thunders.TechTest.ApiService;
-using Thunders.TechTest.OutOfBox.Database;
-using Thunders.TechTest.OutOfBox.Queues;
+using Microsoft.OpenApi.Models;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
+using Rebus.Config;
+using Rebus.Routing.TypeBased;
+using Rebus.ServiceProvider;
+using Thunders.TechTest.ApiService.Data;
+using Thunders.TechTest.ApiService.Handlers;
+using Thunders.TechTest.ApiService.Models;
+using Thunders.TechTest.ApiService.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddServiceDefaults();
-builder.Services.AddControllers();
-
-var features = Features.BindFromConfiguration(builder.Configuration);
-
-// Add services to the container.
+// Adicionar serviços ao contêiner
 builder.Services.AddProblemDetails();
 
-if (features.UseMessageBroker)
-{
-    builder.Services.AddBus(builder.Configuration, new SubscriptionBuilder());
-}
+builder.Services.AddDbContext<PedagioDbContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("SqlServer")));
 
-if (features.UseEntityFramework)
+builder.Services.AddOpenTelemetry().WithTracing(builder =>
 {
-    builder.Services.AddSqlServerDbContext<DbContext>(builder.Configuration);
-}
+    builder
+        .AddSource("PedagioService")
+        .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService("ApiService"))
+        .AddAspNetCoreInstrumentation()
+        .AddHttpClientInstrumentation()
+        .AddConsoleExporter();
+});
 
+builder.Services.AddRebus(configurer =>
+    configurer
+        .Transport(t => t.UseRabbitMq("amqp://localhost", "utilizacoes"))
+        .Routing(r => r.TypeBased().Map<Utilizacao>("utilizacoes"))
+);
+
+builder.Services.AddTransient<PedagioService>();
+
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "ApiService", Version = "v1" });
+});
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-app.UseExceptionHandler();
+// Configurar o pipeline de requisições
+if (app.Environment.IsDevelopment())
+{
+    app.UseDeveloperExceptionPage();
+    app.UseSwagger();
+    app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "ApiService v1"));
+}
+else
+{
+    app.UseExceptionHandler();
+}
 
-app.MapDefaultEndpoints();
-
+app.UseHttpsRedirection();
+app.UseAuthorization();
 app.MapControllers();
+
+app.Services.StartRebus();
 
 app.Run();
