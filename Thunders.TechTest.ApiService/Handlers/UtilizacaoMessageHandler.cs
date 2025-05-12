@@ -5,9 +5,9 @@ using Thunders.TechTest.ApiService.Services;
 namespace Thunders.TechTest.ApiService.Handlers
 
 {
-    public class UtilizacaoMessageHandler(PedagioService pedagioService) : IHandleMessages<Utilizacao>
+    public class UtilizacaoMessageHandler(IPedagioService pedagioService) : IHandleMessages<Utilizacao>
     {
-        private readonly PedagioService _pedagioService = pedagioService;
+        private readonly IPedagioService _pedagioService = pedagioService;
 
         public async Task Handle(Utilizacao message)
         {

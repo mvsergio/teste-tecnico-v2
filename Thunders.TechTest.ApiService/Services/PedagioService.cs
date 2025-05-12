@@ -6,55 +6,70 @@ using Thunders.TechTest.ApiService.Models;
 
 namespace Thunders.TechTest.ApiService.Services;
 
-public class PedagioService(PedagioDbContext dbContext)
+public class PedagioService(PedagioDbContext dbContext) : IPedagioService
 {
-        private readonly PedagioDbContext _dbContext = dbContext;
-        private static readonly ActivitySource ActivitySource = new("PedagioService");
+    private readonly PedagioDbContext _dbContext = dbContext;
+    private static readonly ActivitySource ActivitySource = new("PedagioService");
 
     public async Task InserirUtilizacaoAsync(Utilizacao utilizacao)
+    {
+        if (utilizacao == null)
+            throw new ArgumentNullException(nameof(utilizacao));
+
+        if (string.IsNullOrEmpty(utilizacao.Praca))
+            throw new ArgumentException("Praça é obrigatória.", nameof(utilizacao.Praca));
+
+        if (string.IsNullOrEmpty(utilizacao.Cidade))
+            throw new ArgumentException("Cidade é obrigatória.", nameof(utilizacao.Cidade));
+
+        if (string.IsNullOrEmpty(utilizacao.TipoVeiculo))
+            throw new ArgumentException("Tipo de Veículo é obrigatório.", nameof(utilizacao.TipoVeiculo));
+
+        if (utilizacao.ValorPago < 0)
+            throw new ArgumentException("Valor pago não pode zer menor que zero.", nameof(utilizacao.ValorPago));
+
+        using var activity = ActivitySource.StartActivity("InserirUtilizacao", ActivityKind.Internal);
+        activity?.SetTag("utilizacao.data", utilizacao.DataHora.ToString("o"));
+        activity?.SetTag("utilizacao.praca", utilizacao.Praca);
+        activity?.SetTag("utilizacao.cidade", utilizacao.Cidade);
+
+        try
         {
-            using var activity = ActivitySource.StartActivity("InserirUtilizacao", ActivityKind.Internal);
-            activity?.SetTag("utilizacao.data", utilizacao.DataHora.ToString("o"));
-            activity?.SetTag("utilizacao.praca", utilizacao.Praca);
-            activity?.SetTag("utilizacao.cidade", utilizacao.Cidade);
-
-            try
-            {
-                await _dbContext.Utilizacoes.AddAsync(utilizacao);
-                await _dbContext.SaveChangesAsync();
-            }
-            catch (Exception ex)
-            {
-                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-                throw;
-            }
+            await _dbContext.Utilizacoes.AddAsync(utilizacao);
+            await _dbContext.SaveChangesAsync();
         }
-
-        public async Task<List<RelatorioValorPorHoraDTO>> GerarRelatorioValorTotalPorHoraAsync(string cidade)
+        catch (Exception ex)
         {
-            using var activity = ActivitySource.StartActivity("GerarRelatorioValorTotalPorHora", ActivityKind.Internal);
-            activity?.SetTag("cidade", cidade);
-
-            try
-            {
-                var resultado = await _dbContext.Utilizacoes
-                    .Where(u => u.Cidade == cidade)
-                    .GroupBy(u => u.DataHora.Hour)
-                    .Select(g => new RelatorioValorPorHoraDTO
-                    {
-                        Hora = g.Key,
-                        ValorTotal = g.Sum(u => u.ValorPago)
-                    })
-                    .ToListAsync();
-
-                return resultado;
-            }
-            catch (Exception ex)
-            {
-                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-                throw;
-            }
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            throw;
         }
+    }
+
+    public async Task<List<RelatorioValorPorHoraDTO>> GerarRelatorioValorTotalPorHoraAsync(string cidade)
+    {
+        using var activity = ActivitySource.StartActivity("GerarRelatorioValorTotalPorHora", ActivityKind.Internal);
+        activity?.SetTag("cidade", cidade);
+
+        try
+        {
+            var resultado = await _dbContext.Utilizacoes
+                .Where(u => u.Cidade == cidade)
+                .GroupBy(u => u.DataHora.Hour)
+                .Select(g => new RelatorioValorPorHoraDTO
+                {
+                    Hora = g.Key,
+                    ValorTotal = g.Sum(u => u.ValorPago)
+                })
+                .ToListAsync();
+
+            return resultado;
+        }
+        catch (Exception ex)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            throw;
+        }
+    }
 
     public async Task<List<RelatorioPracasMaisFaturaramDTO>> GerarRelatorioPracasMaisFaturaramAsync(int quantidade, DateTime mes)
     {
@@ -89,28 +104,28 @@ public class PedagioService(PedagioDbContext dbContext)
     }
 
     public async Task<List<RelatorioTiposVeiculosDTO>> GerarRelatorioTiposVeiculosPorPracaAsync(string praca)
+    {
+        using var activity = ActivitySource.StartActivity("GerarRelatorioTiposVeiculosPorPraca", ActivityKind.Internal);
+        activity?.SetTag("praca", praca);
+
+        try
         {
-            using var activity = ActivitySource.StartActivity("GerarRelatorioTiposVeiculosPorPraca", ActivityKind.Internal);
-            activity?.SetTag("praca", praca);
+            var resultado = await _dbContext.Utilizacoes
+                .Where(u => u.Praca == praca)
+                .GroupBy(u => u.TipoVeiculo)
+                .Select(g => new RelatorioTiposVeiculosDTO
+                {
+                    TipoVeiculo = g.Key,
+                    Quantidade = g.Count()
+                })
+                .ToListAsync();
 
-            try
-            {
-                var resultado = await _dbContext.Utilizacoes
-                    .Where(u => u.Praca == praca)
-                    .GroupBy(u => u.TipoVeiculo)
-                    .Select(g => new RelatorioTiposVeiculosDTO
-                    {
-                        TipoVeiculo = g.Key,
-                        Quantidade = g.Count()
-                    })
-                    .ToListAsync();
-
-                return resultado;
-            }
-            catch (Exception ex)
-            {
-                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-                throw;
-            }
+            return resultado;
+        }
+        catch (Exception ex)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            throw;
         }
     }
+}

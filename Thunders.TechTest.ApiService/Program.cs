@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
+using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Rebus.Config;
@@ -18,6 +19,21 @@ builder.Services.AddProblemDetails();
 builder.Services.AddDbContext<PedagioDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("SqlServer")));
 
+builder.Services.AddRebus(configurer =>
+    configurer
+        .Transport(t => t.UseRabbitMq(builder.Configuration.GetConnectionString("RabbitMQ"), "utilizacoes"))
+        .Routing(r => r.TypeBased().Map<Utilizacao>("utilizacoes"))
+);
+
+builder.Services.AddTransient<IPedagioService, PedagioService>();
+
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "ApiService", Version = "v1" });
+});
+
 builder.Services.AddOpenTelemetry().WithTracing(builder =>
 {
     builder
@@ -26,21 +42,6 @@ builder.Services.AddOpenTelemetry().WithTracing(builder =>
         .AddAspNetCoreInstrumentation()
         .AddHttpClientInstrumentation()
         .AddConsoleExporter();
-});
-
-builder.Services.AddRebus(configurer =>
-    configurer
-        .Transport(t => t.UseRabbitMq("amqp://localhost", "utilizacoes"))
-        .Routing(r => r.TypeBased().Map<Utilizacao>("utilizacoes"))
-);
-
-builder.Services.AddTransient<PedagioService>();
-
-builder.Services.AddControllers();
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(c =>
-{
-    c.SwaggerDoc("v1", new OpenApiInfo { Title = "ApiService", Version = "v1" });
 });
 
 var app = builder.Build();
